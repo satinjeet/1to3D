@@ -1,20 +1,27 @@
 #!/bin/sh
-# Install the 1to3d freecad skill, the freecad-designer agent and the FreeCAD MCP server into Kilo Code.
+# Install the 1to3d freecad skill, the freecad-designer agent and the FreeCAD MCP server into Kilo Code or opencode.
 #
 #   curl -fsSL https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh | sh -s -- --target opencode
 #   curl -fsSL https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh | sh -s -- --project <dir>
-#   ./install.sh [--project <dir>] [--uninstall]     from a clone
+#   ./install.sh [--target kilo|opencode] [--project <dir>] [--uninstall]     from a clone
 #
 # Run from a clone, it installs that clone's files. Piped from curl, it downloads the repo first
 # (branch or tag from ONETO3D_REF, default main) into a temporary folder.
 #
 # Files are copied, not linked: Kilo does not follow a symlinked skill folder. Rerun after updating.
 #
+# Kilo is a fork of opencode: both read skills from .agents/skills, take the same agent file and the same
+# mcp block, so one skill folder and one agent file serve both.
+#
 # What it touches
-#   global   ~/.agents/skills/freecad                   copy of skills/freecad
-#            ~/.config/kilo/agents/freecad-designer.md  copy of kilo/agents/freecad-designer.md
-#            ~/.config/kilo/kilo.json                   adds mcp.freecad (Kilo merges it with kilo.jsonc)
-#   project  <dir>/.agents/skills/freecad, <dir>/.kilo/agents/freecad-designer.md, <dir>/.kilo/kilo.json
+#   both      ~/.agents/skills/freecad                       copy of skills/freecad (shared by Kilo and opencode)
+#   kilo      ~/.config/kilo/agents/freecad-designer.md      copy of kilo/agents/freecad-designer.md
+#             ~/.config/kilo/kilo.json                       adds mcp.freecad (Kilo merges it with kilo.jsonc)
+#   opencode  ~/.config/opencode/agents/freecad-designer.md  the same agent file
+#             ~/.config/opencode/opencode.json               adds mcp.freecad (merged with opencode.jsonc)
+#   project   <dir>/.agents/skills/freecad, plus <dir>/.kilo/agents/freecad-designer.md and <dir>/.kilo/kilo.json,
+#             or <dir>/.opencode/agents/freecad-designer.md and <dir>/.opencode/opencode.json
 set -eu
 
 REPO="satinjeet/1to3d"
@@ -22,13 +29,15 @@ REF="${ONETO3D_REF:-main}"
 MCP_URL="${FREECAD_MCP_URL:-http://127.0.0.1:39280/mcp}"
 MODE=global
 PROJECT=""
+TARGET=kilo
 ACTION=install
 
 usage() {
   cat <<EOF
-Usage: install.sh [--project <dir>] [--uninstall]
+Usage: install.sh [--target kilo|opencode] [--project <dir>] [--uninstall]
 
-  (no options)       install for every Kilo project on this machine
+  (no options)       install into Kilo, for every project on this machine
+  --target <agent>   kilo (default) or opencode
   --project <dir>    install into one project only
   --uninstall        remove what install added (global, or with --project)
 
@@ -45,6 +54,10 @@ while [ $# -gt 0 ]; do
     --project)
       [ $# -ge 2 ] || die "--project needs a folder"
       MODE=project; PROJECT="$(cd "$2" && pwd)" || die "no such folder: $2"; shift 2 ;;
+    --target)
+      [ $# -ge 2 ] || die "--target needs kilo or opencode"
+      case "$2" in kilo|opencode) TARGET="$2" ;; *) die "unknown target: $2 (use kilo or opencode)" ;; esac
+      shift 2 ;;
     --uninstall) ACTION=uninstall; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
@@ -66,23 +79,30 @@ esac
 # so a different skill that happens to be called "freecad" is never removed.
 MARKER=".installed-by-1to3d"
 
+if [ "$TARGET" = kilo ]; then
+  NAME=Kilo; CONFNAME=kilo.json; SCHEMA="https://app.kilo.ai/config.json"; OTHER=opencode
+else
+  NAME=opencode; CONFNAME=opencode.json; SCHEMA="https://opencode.ai/config.json"; OTHER=kilo
+fi
 if [ "$MODE" = global ]; then
   SKILLS="$HOME/.agents/skills"
-  AGENTS="${XDG_CONFIG_HOME:-$HOME/.config}/kilo/agents"
-  CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/kilo/kilo.json"
+  AGENTS="${XDG_CONFIG_HOME:-$HOME/.config}/$TARGET/agents"
+  CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/$TARGET/$CONFNAME"
+  OTHER_AGENT="${XDG_CONFIG_HOME:-$HOME/.config}/$OTHER/agents/freecad-designer.md"
 else
   SKILLS="$PROJECT/.agents/skills"
-  AGENTS="$PROJECT/.kilo/agents"
-  CONFIG="$PROJECT/.kilo/kilo.json"
+  AGENTS="$PROJECT/.$TARGET/agents"
+  CONFIG="$PROJECT/.$TARGET/$CONFNAME"
+  OTHER_AGENT="$PROJECT/.$OTHER/agents/freecad-designer.md"
 fi
 
 # Add or remove mcp.freecad in a plain JSON config, keeping everything else in it.
 # An mcp.freecad that does not point at $MCP_URL (or was hand-edited) is the user's own and is left alone.
 # The old file is kept as <config>.bak and the new one is written to a temp file and renamed into place.
 edit_mcp() {
-  python3 - "$CONFIG" "$1" "$MCP_URL" <<'EOF'
+  python3 - "$CONFIG" "$1" "$MCP_URL" "$SCHEMA" <<'EOF'
 import json, os, shutil, sys, tempfile
-path, action, url = sys.argv[1:]
+path, action, url, schema = sys.argv[1:]
 ours = {"type": "remote", "url": url, "enabled": True, "timeout": 120000}
 cfg = {}
 if os.path.exists(path):
@@ -95,7 +115,7 @@ if cur is not None and cur != ours:
 if action == "add":
     if cur == ours:
         sys.exit()
-    cfg.setdefault("$schema", "https://app.kilo.ai/config.json")
+    cfg.setdefault("$schema", schema)
     cfg.setdefault("mcp", {})["freecad"] = ours
 elif cur is None:
     sys.exit()
@@ -107,7 +127,7 @@ d = os.path.dirname(path)
 os.makedirs(d, exist_ok=True)
 if os.path.exists(path):
     shutil.copy2(path, path + ".bak")
-fd, tmp = tempfile.mkstemp(dir=d, prefix=".kilo.json.")
+fd, tmp = tempfile.mkstemp(dir=d, prefix="." + os.path.basename(path) + ".")
 with os.fdopen(fd, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
@@ -123,10 +143,15 @@ remove_skill() {
 }
 
 if [ "$ACTION" = uninstall ]; then
-  remove_skill
+  # The skill folder is shared: keep it while the other agent still has 1to3d installed.
+  if [ -f "$OTHER_AGENT" ]; then
+    echo "keeping $SKILLS/freecad: $OTHER still uses it"
+  else
+    remove_skill
+  fi
   rm -f "$AGENTS/freecad-designer.md"
   edit_mcp remove
-  echo "removed 1to3d from Kilo ($MODE)"
+  echo "removed 1to3d from $NAME ($MODE)"
   exit 0
 fi
 
@@ -163,8 +188,12 @@ echo "$REPO@$REF" > "$SKILLS/freecad/$MARKER"
 cp "$ROOT/kilo/agents/freecad-designer.md" "$AGENTS/freecad-designer.md"
 edit_mcp add
 
-echo "installed 1to3d for Kilo ($MODE)"
+echo "installed 1to3d for $NAME ($MODE)"
 echo "  skill  $SKILLS/freecad"
 echo "  agent  $AGENTS/freecad-designer.md"
 echo "  mcp    freecad -> $MCP_URL in $CONFIG"
-echo "Reload the Kilo panel (or restart kilo), then pick the freecad-designer agent."
+if [ "$TARGET" = kilo ]; then
+  echo "Reload the Kilo panel (or restart kilo), then pick the freecad-designer agent."
+else
+  echo "Restart opencode, then press Tab to pick the freecad-designer agent."
+fi

@@ -20,7 +20,7 @@ designs/<slug>/
 └── <type>/       usable files, made once you're happy: 3d-print/, mesh/, blender/, drawings/ ...
 ```
 
-It drives **FreeCAD** today, with Blender and other tools planned, and works with **Claude Code** and **Kilo Code**.
+It drives **FreeCAD** today, with Blender and other tools planned, and works with **Claude Code**, **Kilo Code** and **opencode**.
 
 ---
 
@@ -47,7 +47,7 @@ The browser viewer loads three.js from the jsDelivr CDN, checked against pinned 
 
 The MCP Bridge's `execute_python` tool runs **any Python** inside FreeCAD, with your user's file access. It runs outside the agent's own sandbox and permission rules, such as Claude Code's bash sandbox. Treat it like a shell:
 
-- **Approve each FreeCAD run; never "always allow" it.** That covers `execute_python` and `execute_python_file`, in Claude Code and in Kilo. The Kilo agent asks before each run by default. Read the script before you approve it.
+- **Approve each FreeCAD run; never "always allow" it.** That covers `execute_python` and `execute_python_file`, in Claude Code, Kilo and opencode. The Kilo and opencode agent asks before each run by default. Read the script before you approve it.
 - **Be careful with untrusted projects.** The agent reads the files, photos and existing `designs/` in your project. Content that is written to steer the agent (prompt injection) could try to get code run through FreeCAD. The skill tells the agent to treat project content as data. Still, review what it runs, more so in repos you did not write.
 - **Any program on your machine can reach the bridge.** It listens on `127.0.0.1` with no authentication. It rejects requests from web pages with a non-local `Origin`, but local processes can still reach it. Stop the add-on, or close FreeCAD, when you're not designing.
 - **Keep the bridge on this machine.** Do not point `FREECAD_MCP_URL` or `.mcp.json` at another host unless you trust that host and the network. Traffic is plain HTTP.
@@ -225,12 +225,74 @@ If you installed with `FREECAD_MCP_URL`, set the same value when you uninstall. 
 
 ---
 
+## opencode
+
+This covers the `opencode` CLI and TUI (opencode 1.x). Kilo is a fork of opencode, so opencode uses the same install script, skill and agent file as Kilo. Add `--target opencode`.
+
+### Install
+
+Read the script before you run it:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh
+less install.sh
+sh install.sh --target opencode                          # every project on this machine
+sh install.sh --target opencode --project /path/to/project
+```
+
+Or pipe it straight to `sh`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh | sh -s -- --target opencode
+```
+
+This writes:
+- the skill to `~/.agents/skills/freecad/`, the same folder Kilo uses
+- the agent to `~/.config/opencode/agents/freecad-designer.md`
+- `mcp.freecad` to `~/.config/opencode/opencode.json`
+
+opencode merges `opencode.json` with your `opencode.jsonc`. The script keeps a backup and the skill-folder marker, the same as for Kilo.
+
+With `--project`, it writes `.agents/skills/freecad/`, `.opencode/agents/freecad-designer.md` and `.opencode/opencode.json` in that project.
+
+Then restart `opencode`. Check the install worked from the project folder:
+
+```bash
+opencode agent list | grep freecad-designer   # freecad-designer (primary)
+opencode mcp list                             # ✓ freecad connected
+opencode debug skill | grep freecad           # the skill's location
+```
+
+### Use
+
+1. Run `opencode` in the project.
+2. Press **Tab** to cycle agents until **freecad-designer** is selected.
+3. Describe the part, with measurements, as in the Claude example above.
+
+The agent has the same permissions as in Kilo: edits under `designs/` run without asking, and each FreeCAD run, other edit and shell command asks first.
+
+### Update
+
+Run the same install command again. `ONETO3D_REF` and running from a clone work the same as for Kilo.
+
+### Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh | sh -s -- --target opencode --uninstall
+curl -fsSL https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh | sh -s -- --target opencode --uninstall --project /path/to/project
+```
+
+The skill folder is shared with Kilo. If 1to3d is also installed for Kilo in the same place, uninstalling from opencode removes the agent and `mcp.freecad`, but keeps the skill.
+
+---
+
 ## Different port
 
 If the MCP Bridge listens on a port other than 39280:
 
 - **Claude Code:** clone the repo, edit `url` in its `.mcp.json`, and install from the clone (`claude plugin marketplace add ./1to3d`). Then run `/reload-plugins`.
 - **Kilo Code:** reinstall with `curl -fsSL https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh | FREECAD_MCP_URL=http://127.0.0.1:<port>/mcp sh`.
+- **opencode:** the same, with `sh -s -- --target opencode` at the end.
 
 ## Troubleshooting
 
@@ -240,6 +302,8 @@ If the MCP Bridge listens on a port other than 39280:
 | `Error reading file ... No such file or directory` on a script in `/tmp` | FreeCAD is a Flatpak and can't see `/tmp`. Keep projects under your home folder. |
 | The browser viewer shows "Failed to load" | It was opened as `file://`. Let the agent start it with `serve_viewer.py`, which serves it over http. |
 | In Kilo, the skill is missing after an update | Rerun the install command. Symlinks are ignored. |
+| opencode logs `duplicate skill name ... freecad` | The skill is installed both globally and in the project. opencode uses the global copy. Rerun the global install so both copies match, or uninstall one. |
+| opencode doesn't list the `freecad` skill | `OPENCODE_DISABLE_EXTERNAL_SKILLS` is set, which skips `~/.agents/skills`. Unset it. |
 | `install.sh: .../freecad was not installed by 1to3d` | Another skill called `freecad` is in that folder. Move it away, then rerun. |
 | `FreeCAD document ... is open with unsaved work` | A document with the design's name has unsaved edits in FreeCAD. Save or close it, then ask the agent to run again. |
 | The browser viewer stays blank offline | It loads three.js from jsDelivr. Connect to the internet and reload. |
@@ -253,8 +317,8 @@ If the MCP Bridge listens on a port other than 39280:
 ├── .claude-plugin/marketplace.json   marketplace, so Claude can install from this repo
 ├── .mcp.json                         FreeCAD MCP server, for Claude
 ├── agents/freecad-designer.md        Claude agent
-├── kilo/agents/freecad-designer.md   Kilo agent (mode: primary, permissions)
-├── install.sh                        Kilo installer (curl | sh, or run from a clone)
+├── kilo/agents/freecad-designer.md   Kilo and opencode agent (mode: primary, permissions)
+├── install.sh                        Kilo and opencode installer (curl | sh, or run from a clone)
 ├── LICENSE                           MIT
 └── skills/freecad/                   the FreeCAD skill, the same for every agent
     ├── SKILL.md                      the design loop
