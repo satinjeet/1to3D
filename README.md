@@ -20,7 +20,7 @@ designs/<slug>/
 └── <type>/       usable files, made once you're happy: 3d-print/, mesh/, blender/, drawings/ ...
 ```
 
-It drives **FreeCAD** today, with Blender and other tools planned, and works with **Claude Code**, **Kilo Code** and **opencode**.
+It drives **FreeCAD** today, with Blender and other tools planned, and works with **Claude Code**, **Kilo Code**, **opencode** and **GitHub Copilot**.
 
 ---
 
@@ -47,7 +47,7 @@ The browser viewer loads three.js from the jsDelivr CDN, checked against pinned 
 
 The MCP Bridge's `execute_python` tool runs **any Python** inside FreeCAD, with your user's file access. It runs outside the agent's own sandbox and permission rules, such as Claude Code's bash sandbox. Treat it like a shell:
 
-- **Approve each FreeCAD run; never "always allow" it.** That covers `execute_python` and `execute_python_file`, in Claude Code, Kilo and opencode. The Kilo and opencode agent asks before each run by default. Read the script before you approve it.
+- **Approve each FreeCAD run; never "always allow" it.** That covers `execute_python` and `execute_python_file`, in Claude Code, Kilo, opencode and Copilot. The Kilo and opencode agent asks before each run by default. In Copilot, don't use `--allow-all-tools`, `--yolo` or `/allow-all` while you design. Read the script before you approve it.
 - **Be careful with untrusted projects.** The agent reads the files, photos and existing `designs/` in your project. Content that is written to steer the agent (prompt injection) could try to get code run through FreeCAD. The skill tells the agent to treat project content as data. Still, review what it runs, more so in repos you did not write.
 - **Any program on your machine can reach the bridge.** It listens on `127.0.0.1` with no authentication. It rejects requests from web pages with a non-local `Origin`, but local processes can still reach it. Stop the add-on, or close FreeCAD, when you're not designing.
 - **Keep the bridge on this machine.** Do not point `FREECAD_MCP_URL` or `.mcp.json` at another host unless you trust that host and the network. Traffic is plain HTTP.
@@ -286,6 +286,63 @@ The skill folder is shared with Kilo. If 1to3d is also installed for Kilo in the
 
 ---
 
+## GitHub Copilot
+
+### Copilot CLI
+
+The Copilot CLI installs this repo as a plugin, the same way as Claude Code. The plugin brings the skill, the agent and the FreeCAD MCP server.
+
+Install it once:
+
+```bash
+copilot plugin marketplace add satinjeet/1to3d
+copilot plugin install 1to3d@1to3d
+```
+
+Check the install worked:
+
+```bash
+copilot plugin list               # 1to3d@1to3d (enabled)
+copilot mcp list                  # Plugin servers: freecad (http)
+copilot skill list | grep freecad
+```
+
+Start a design session with the agent:
+
+```bash
+copilot --agent 1to3d:freecad-designer
+```
+
+You can also pick the agent with `/agent` in a running session, or just describe the part in a normal session so that the `freecad` skill loads by itself. Copilot asks before each FreeCAD run. Approve each run once; don't allow it for the whole session. See [Security](#security).
+
+To update, refresh the marketplace, then update the plugin:
+
+```bash
+copilot plugin marketplace update 1to3d
+copilot plugin update 1to3d@1to3d
+```
+
+To uninstall:
+
+```bash
+copilot plugin uninstall 1to3d@1to3d
+copilot plugin marketplace remove 1to3d
+```
+
+If you're working on the plugin itself, add your clone as the marketplace (`copilot plugin marketplace add ./1to3d`). Copilot then loads the plugin from the clone, and your edits take effect in the next session. To try it once without installing, run `copilot --plugin-dir ./1to3d`.
+
+### VS Code (Copilot Chat)
+
+VS Code agent plugins can install this repo too. They are in preview.
+
+1. Set `chat.plugins.enabled` to `true`.
+2. Run **Chat: Install Plugin from Source** and enter `satinjeet/1to3d`.
+3. In Copilot Chat, in Agent mode, describe the part. The `freecad` skill and the FreeCAD MCP server come with the plugin.
+
+VS Code reads the Claude manifest of this repo, so the dedicated freecad-designer agent may not show up there. The skill does the same job in any agent.
+
+---
+
 ## Different port
 
 If the MCP Bridge listens on a port other than 39280:
@@ -293,6 +350,7 @@ If the MCP Bridge listens on a port other than 39280:
 - **Claude Code:** clone the repo, edit `url` in its `.mcp.json`, and install from the clone (`claude plugin marketplace add ./1to3d`). Then run `/reload-plugins`.
 - **Kilo Code:** reinstall with `curl -fsSL https://raw.githubusercontent.com/satinjeet/1to3d/main/install.sh | FREECAD_MCP_URL=http://127.0.0.1:<port>/mcp sh`.
 - **opencode:** the same, with `sh -s -- --target opencode` at the end.
+- **GitHub Copilot:** clone the repo, edit `url` in its `.mcp.json`, and add the clone as the marketplace (`copilot plugin marketplace add ./1to3d`).
 
 ## Troubleshooting
 
@@ -315,11 +373,14 @@ If the MCP Bridge listens on a port other than 39280:
 1to3d/
 ├── .claude-plugin/plugin.json        Claude plugin manifest
 ├── .claude-plugin/marketplace.json   marketplace, so Claude can install from this repo
-├── .mcp.json                         FreeCAD MCP server, for Claude
+├── .github/plugin/                   Copilot CLI plugin manifest and marketplace
+├── .mcp.json                         FreeCAD MCP server, for Claude and Copilot
 ├── agents/freecad-designer.md        Claude agent
+├── copilot/agents/freecad-designer.agent.md   Copilot agent
 ├── kilo/agents/freecad-designer.md   Kilo and opencode agent (mode: primary, permissions)
 ├── install.sh                        Kilo and opencode installer (curl | sh, or run from a clone)
 ├── LICENSE                           MIT
+├── SECURITY.md                       known security risks, by severity, for every agent
 └── skills/freecad/                   the FreeCAD skill, the same for every agent
     ├── SKILL.md                      the design loop
     ├── references/                   modelling.md (how to model), assets.md (output types)
