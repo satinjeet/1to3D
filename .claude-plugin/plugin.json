@@ -1,0 +1,11 @@
+{
+  "name": "1to3d",
+  "displayName": "1to3D",
+  "version": "0.1.0",
+  "description": "From an idea to a physical part, with an AI agent driving your CAD tool. Ships FreeCAD support: design parts through the FreeCAD MCP Bridge, clarify requirements, model, verify with screenshots, inspect in FreeCAD or a browser 3D viewer, iterate, then export print files, STEP and meshes.",
+  "author": { "name": "Satin" },
+  "homepage": "https://github.com/satinjeet/1to3d",
+  "repository": "https://github.com/satinjeet/1to3d",
+  "license": "MIT",
+  "keywords": ["1to3d", "freecad", "cad", "3d-printing", "mcp"]
+}
