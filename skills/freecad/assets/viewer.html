@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Design Viewer</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --panel: #ffffffee;
+      --fg: #1d2330;
+      --muted: #667085;
+      --line: #d6d9e0;
+      --accent: #2f6fde;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16181d;
+        --panel: #22252ccc;
+        --fg: #e6e8ec;
+        --muted: #9aa1ad;
+        --line: #363a44;
+        --accent: #6c9cff;
+      }
+    }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font: 14px/1.4 system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    #c {
+      position: fixed;
+      inset: 0;
+    }
+
+    .panel {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      width: 260px;
+      max-height: calc(100% - 24px);
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      backdrop-filter: blur(6px);
+    }
+
+    h1 {
+      font-size: 15px;
+      margin: 0 0 2px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0;
+    }
+
+    .sw {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      flex: none;
+    }
+
+    .part label {
+      flex: 1;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .part .dims {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    button {
+      font: inherit;
+      font-size: 12px;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--fg);
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: var(--accent);
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 10px 0;
+    }
+
+    input[type=range] {
+      width: 100%;
+    }
+
+    #err {
+      color: #d33;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width:600px) {
+      .panel {
+        width: auto;
+        right: 12px;
+        max-height: 40%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="c"></canvas>
+  <div class="panel">
+    <h1 id="name">Loading…</h1>
+    <div class="muted" id="size"></div>
+    <div id="err"></div>
+    <hr>
+    <div id="parts"></div>
+    <hr>
+    <div class="row"><input type="checkbox" id="wire"><label for="wire">Edges</label>
+      <input type="checkbox" id="grid" checked><label for="grid">Grid</label>
+    </div>
+    <div class="muted">Explode</div>
+    <input type="range" id="explode" min="0" max="1" step="0.01" value="0">
+    <div class="muted">Section (cut along X)</div>
+    <input type="range" id="section" min="0" max="1" step="0.001" value="1">
+    <div class="btns">
+      <button data-v="iso">Iso</button><button data-v="front">Front</button><button data-v="top">Top</button>
+      <button data-v="right">Right</button><button data-v="rear">Rear</button><button data-v="bottom">Bottom</button>
+    </div>
+    <div class="muted" style="margin-top:8px">Drag rotate · right-drag pan · wheel zoom · mm, Z up</div>
+  </div>
+  <script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+},
+  "integrity": {
+  "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js": "sha384-61S/Nu32S3E5+n+KpCOTb2eRYps6fVKm+9Gz1QBvSePFthb46f063Aa/qe/lykFZ",
+  "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js": "sha384-qlO/ZugKPxAQUAvTlQoo0QECzxJIJySZmCF/DHdb2Xn/hHndFwX/vfUAC9Hbk6LP",
+  "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/STLLoader.js": "sha384-iUykpV7CnAlHYQ2KS0JYVxQcsk6JdCjM1k3R0BuPqwd5p2g2A8HioqUrteJrWZKo"
+} }
+</script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { STLLoader } from "three/addons/loaders/STLLoader.js";
+
+    const canvas = document.getElementById("c");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.localClippingEnabled = true;
+    const scene = new THREE.Scene();
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    scene.background = new THREE.Color(dark ? 0x16181d : 0xf4f5f7);
+    THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100000);
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x667085, 1.1));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(1, -1.5, 2); scene.add(sun);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.5); fill.position.set(-1, 1, 0.5); scene.add(fill);
+
+    const clip = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 1e9);
+    const items = [];
+    const box = new THREE.Box3();
+    let grid;
+
+    function resize() {
+      const w = innerWidth, h = innerHeight;
+      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    }
+    addEventListener("resize", resize); resize();
+
+    function setView(v) {
+      const c = box.getCenter(new THREE.Vector3());
+      const r = box.getSize(new THREE.Vector3()).length() || 100;
+      const d = { iso: [1, -1, 0.8], front: [0, -1, 0], rear: [0, 1, 0], top: [0, -0.0001, 1], bottom: [0, 0.0001, -1], right: [1, 0, 0] }[v];
+      const dir = new THREE.Vector3(...d).normalize();
+      camera.position.copy(c).addScaledVector(dir, r * 1.6);
+      controls.target.copy(c); controls.update();
+    }
+    document.querySelectorAll("[data-v]").forEach(b => b.onclick = () => setView(b.dataset.v));
+
+    function applyExplode(t) {
+      const c = box.getCenter(new THREE.Vector3());
+      const r = box.getSize(new THREE.Vector3()).length();
+      for (const it of items) {
+        const dir = it.center.clone().sub(c);
+        if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+        it.mesh.position.copy(dir.normalize().multiplyScalar(t * r * 0.5));
+      }
+    }
+
+    async function main() {
+      const m = await (await fetch("manifest.json")).json();
+      document.title = m.name + " · viewer";
+      document.getElementById("name").textContent = m.name;
+      document.getElementById("size").textContent = `Overall ${m.size_mm.join(" × ")} mm · ${m.parts.length} part(s)`;
+      const loader = new STLLoader();
+      const list = document.getElementById("parts");
+      for (const p of m.parts) {
+        const geo = await loader.loadAsync(p.file);
+        geo.computeVertexNormals(); geo.computeBoundingBox();
+        const mat = new THREE.MeshStandardMaterial({
+          color: p.color, roughness: 0.55, metalness: 0.05,
+          clippingPlanes: [clip], clipShadows: true, side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25),
+          new THREE.LineBasicMaterial({ color: dark ? 0xdddddd : 0x222222, clippingPlanes: [clip] }));
+        edges.visible = false; mesh.add(edges);
+        scene.add(mesh);
+        const center = geo.boundingBox.getCenter(new THREE.Vector3());
+        items.push({ mesh, edges, center });
+        box.union(geo.boundingBox);
+        const row = document.createElement("div"); row.className = "row part";
+        const id = "p_" + items.length;
+        // Build with textContent, not innerHTML: manifest values are data.
+        row.innerHTML = `<input type="checkbox" id="${id}" checked><span class="sw"></span><label for="${id}"><span class="lbl"></span><br><span class="dims"></span></label>`;
+        row.querySelector(".sw").style.background = p.color;
+        row.querySelector("label").title = p.label;
+        row.querySelector(".lbl").textContent = p.label;
+        row.querySelector(".dims").textContent = p.size_mm.join(" × ") + " mm";
+        row.querySelector("input").onchange = e => mesh.visible = e.target.checked;
+        list.appendChild(row);
+      }
+      const size = box.getSize(new THREE.Vector3());
+      const span = Math.max(size.x, size.y) * 1.6 || 100;
+      const step = span > 400 ? 50 : span > 100 ? 10 : 5;
+      const n = Math.ceil(span / step) * 2;
+      grid = new THREE.GridHelper(n * step, n, 0x8890a0, dark ? 0x30343c : 0xd8dbe2);
+      grid.rotation.x = Math.PI / 2;
+      const c = box.getCenter(new THREE.Vector3());
+      grid.position.set(c.x, c.y, box.min.z - 0.01);
+      scene.add(grid);
+      document.getElementById("grid").onchange = e => grid.visible = e.target.checked;
+      document.getElementById("wire").onchange = e => items.forEach(i => i.edges.visible = e.target.checked);
+      document.getElementById("explode").oninput = e => applyExplode(+e.target.value);
+      document.getElementById("section").oninput = e => {
+        const t = +e.target.value;
+        clip.constant = t >= 1 ? 1e9 : box.min.x + t * (box.max.x - box.min.x);
+      };
+      const v = new URLSearchParams(location.search).get("view") || "iso";
+      setView(v);
+      document.body.dataset.ready = "1";
+    }
+    main().catch(e => {
+      document.getElementById("err").textContent = "Failed to load: " + e.message +
+        "\nOpen through http (serve_viewer.py), not file://"; console.error(e);
+    });
+
+    (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+  </script>
+</body>
+
+</html>

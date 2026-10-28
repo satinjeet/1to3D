@@ -1,0 +1,14 @@
+{
+  "name": "1to3d",
+  "description": "Marketplace for the 1to3d plugin.",
+  "owner": {
+    "name": "Satin"
+  },
+  "plugins": [
+    {
+      "name": "1to3d",
+      "source": "./",
+      "description": "Idea to physical part with an AI agent driving your CAD tool. FreeCAD: design parts through the FreeCAD MCP Bridge, iterate with the user, export usable assets."
+    }
+  ]
+}
